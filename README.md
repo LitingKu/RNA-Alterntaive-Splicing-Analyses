@@ -2,7 +2,9 @@
 
 This page is the collection of how I learn and conduct analyses for bulk RNA sequence. 
 
-The main analyses here, is to use the raw sequence for mapping, and then do the **Differential Gene Expression analysis**, **Alternative Splicing Analysis**, **Motif Enrichment Analysis** and **Chromosome Analysis**.
+Here shows the preparation for RNA sequence analyses
+
+The main analyses, is to use the raw sequence for mapping, and then do the **Differential Gene Expression analysis**, **Alternative Splicing Analysis**, **Motif Enrichment Analysis** and **Chromosome Analysis**.
 
 
 ## Sequence Preparation: Kallisto 
@@ -81,29 +83,154 @@ kallisto quant -i /home/lk627/project/Test/Lab/Reference/Kallisto/Hsapiens/trans
 
 ```
 
+## Alternative Splicing Detection: SUPPA2
+
+SUPPA2 help us to find the alternative splicing events with the output file of Kallisto(the abundance.tsv file).
+
+Go to the https://github.com/comprna/SUPPA/releases/tag/v2.3 download Source.code(tar.gz) on local computer or uploaded to Open OnDemand /home/Your netid/(HPC cluster). Next, run command: tar -xvzf /path/to/SUPPA-2.3.tar.gz to extract files. So, your should have a folder called SUPPA-2.3 and now suppy.py is in the /SUPPA-2.3/ directory!
+
+In order to successfully run suppy.py, some packages for python need to be installed first:
+
+`pip install panadas`
+`pip install skilearn`
+`pip install statsmodels`
+
+### Create SUPPA2 table for downstream analyses
+
+Upload *SUPPA_Complier.py* and *Kallisto2Suppa.R* to the directory.
+
+Remember to change the path name and the name for the samples in the *SUPPA_Complier.py* file.
+```markdown
+## Code need to be modified in SUPPA_Complier.py
+
+basepath = "/**change to the path where the samples located**/"
+data_sample = pd.DataFrame()
+for sample in [name for name in os.listdir(basepath) if os.path.isdir(os.path.join(basepath, name)) and name.startswith('**change the character**')]:
+```
+
+Using batch file: **SUPPA2.sh**
+
+Command:
+`sbatch /path/to/the/batch/file/SUPPA2.sh`
+
+The batch file SUPPA2.sh includes codes for:
+
+1. Convert Kallisto to SUPPA TPM inputs
+2. Obtain the Gencode reference genome
+3. Calculate PSI values per event
+4. Generate SUPPA_merge.csv
+
+Result files after running  **SUPPA2.sh**
+
+1. Exists abundance.txt in /your/sample/folder/
+2. Exists lots of .ioe and .gtf files in /Reference/SUPPA2/Hsapiens or Mmusculus/
+3. Exists A3 A5 AF AL MX RI SE.psi in /your/sample/folder/
+4. Exists SUPPA_merge.csv in /your/directory/contains every sample folder/
+
+## Sequecne Alignment: STAR
+
+With using STAR: https://github.com/alexdobin/STAR for sequence alignment, it help us to generate the **.bam** file that we can do downstream analyses for finding novel alternative splicing events by using rMATs or outrigger.
+
+### First, Download both primary assembly (PRI) version of the genome gtf.gz and fa.gz files for in STAR directory
+
+Human: https://www.gencodegenes.org/human/
+
+Mouse: https://www.gencodegenes.org/mouse/
 
 
+Command:
+`wget -P /path/where/you/want/the/file/to/be/downloaded/ http://~(file link)`
 
-### Differential Gene Expression Analysis
+For example ( Human gene ):
 
-Markdown is a lightweight and easy-to-use syntax for styling your writing. It includes conventions for
+*Get gtf.gz*.    
+`wget -P /home/lk627/project/Test/Lab/Reference/STAR/Hsapiens/ http://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_38/gencode.v38.primary_assembly.annotation.gtf.gz`
+
+*Extract to .gtf*.     
+`gunzip /home/lk627/project/Test/Lab/Reference/STAR/Hsapiens/gencode.v38.primary_assembly.annotation.gtf.gz`
+
+*Get gtf.gz*.      
+`wget -P /home/lk627/project/Test/Lab/Reference/STAR/Hsapiens/ http://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_38/GRCh38.primary_assembly.genome.fa.gz`
+
+*Extract to .gtf*.    
+`gunzip /home/lk627/project/Test/Lab/Reference/STAR/Hsapiens/GRCh38.primary_assembly.genome.fa.gz`
+
+### Second, generate the STAR index files
+
+Using batch file: **STAR_index.sh** 
+
+Command:
+
+`sbatch /path/to/the/batch/file/STAR_index.sh`
 
 ```markdown
-Syntax highlighted code block
+#!/bin/bash
+#SBATCH --mail-type=ALL
+#SBATCH -t 24:00:00 # 24 hr
+#SBATCH --mem=40g
+#SBATCH -c 4 #4 cpus
 
-# Header 1
-## Header 2
-### Header 3
+## module load is to be used on cluster
+module load STAR/2.7.9a-GCCcore-10.2.0
 
-- Bulleted
-- List
+STAR --runThreadN 8 --runMode genomeGenerate --genomeDir /where you want to put the index/ --genomeFastaFiles /the loaction of/[ name].primary_assembly.genome.fa --sjdbGTFfile /the location of/[name].primary_assembly.annotation.gtf --sjdbOverhang 100 --genomeChrBinNbits 18 --genomeSAindexNbases 13 --genomeSAsparseD 3
 
-1. Numbered
-2. List
-
-**Bold** and _Italic_ and `Code` text
-
-[Link](url) and ![Image](src)
+# Example
+STAR --runThreadN 8 --runMode genomeGenerate --genomeDir /gpfs/ycga/scratch60/escobar-hoyos/lk627/Mmusculus --genomeFastaFiles /gpfs/ycga/scratch60/escobar-hoyos/lk627/Mmusculus/GRCm38.primary_assembly.genome.fa --sjdbGTFfile /gpfs/ycga/scratch60/escobar-hoyos/lk627/Mmusculus/gencode.vM10.primary_assembly.annotation.gtf --sjdbOverhang 100 --genomeChrBinNbits 18 --genomeSAindexNbases 13 --genomeSAsparseD 3
 ```
+
+### Third, generate bam file
+
+Using batch file: **STAR.sh** 
+
+Command:
+
+`sbatch /path/to/the/batch/file/STAR.sh`
+
+```markdown
+#!/bin/bash
+#SBATCH --mail-type=ALL
+#SBATCH -t 24:00:00 # 24 hr
+#SBATCH --mem=40g
+#SBATCH -c 4 #4 cpus
+
+## module load is to be used on cluster
+module load STAR/2.7.9a-GCCcore-10.2.0 
+
+
+STAR --genomeDir /STAR reference location/ \
+--runThreadN 8 \
+--readFilesIn <(gunzip -c  /fastq file location/reads1.fastq.gz) <(gunzip -c /fastq file location/reads2.fastq.gz) \
+--outFileNamePrefix /the location of the output bam file/ \
+--outSAMtype BAM SortedByCoordinate \
+--outSAMunmapped Within \
+--outSAMattributes Standard \
+--outSAMstrandField intronMotif
+
+
+# Example
+STAR --genomeDir /home/lk627/project/Test/Lab/Reference/STAR/Hsapiens/ \
+--runThreadN 8 \
+--readFilesIn <(gunzip -c  /home/lk627/project/SRR12900748/SRR12900748_dbGaP-30506_pass_1.fastq.gz) <(gunzip -c / /home/lk627/project/SRR12900748/SRR12900748_dbGaP-30506_pass_2.fastq.gz) \
+--outFileNamePrefix /home/lk627/project/SRR12900748/ \
+--outSAMtype BAM SortedByCoordinate \
+--outSAMunmapped Within \
+--outSAMattributes Standard \
+--outSAMstrandField intronMotif
+```
+
+## Now all the preparation is done!!
+
+To sum up, with the output of Kallisto we can do the **Differential Gene Expression Analysis** with DESeq2, see the **DESeq2.rmd(DESeq2.html)**
+
+With the output of SUPPA2, we can do **Alternative Splicing Analysis** and **Motif Enrichment Analysis**.
+
+With the output of STAR alignment, we can do sashimi plots with [ggsashimi](https://github.com/guigolab/ggsashimi) and detect novel events by [rMATs](https://github.com/Xinglab/rmats-turbo/blob/v4.1.2/README.md) and [outrigger](https://yeolab.github.io/outrigger/outrigger.index.html#module-outrigger.index).
+
+
+
+
+
+
 
 
