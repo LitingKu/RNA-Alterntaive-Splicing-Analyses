@@ -1,3 +1,5 @@
+[Home](index.md)  |  [💻 Lab Work](about.md)
+
 # RNA Alternative Splicing Analyses
 
 This page is the collection of how I learn and conduct analyses for bulk RNA sequence. 
