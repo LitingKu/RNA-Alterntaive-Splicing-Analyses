@@ -1,0 +1,161 @@
+---
+title: "DESeq2"
+author: "Li-TIng, Ku"
+date: "6/30/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tximport)
+library(readr)
+library(tximportData)
+library(DESeq2)
+library(biomaRt)
+library(ggplot2)
+library(ggrepel)
+library(dplyr)
+library(clusterProfiler)
+library(enrichplot)
+library(org.Hs.eg.db)
+library(annotate)
+library(ComplexHeatmap)
+library(viridis)
+library(gridExtra)
+```
+
+## Get annotation file
+
+- Human : useMart(biomart = "ensembl", dataset = "hsapiens_gene_ensembl") 
+- Mouse: useMart(biomart = "ensembl", dataset = "mmusculus_gene_ensembl") 
+
+```{r}
+## get annotation file
+mart <- useMart(biomart = "ensembl", dataset = "hsapiens_gene_ensembl") 
+t2g <- getBM(attributes = c("ensembl_transcript_id", "ensembl_gene_id", "external_gene_name"), mart = mart)
+t2g <- rename(t2g, target_id = ensembl_transcript_id, ens_gene = ensembl_gene_id, ext_gene = external_gene_name)
+t2g <- t2g[1:2]
+```
+
+## Create metadata file 
+
+- Get the abundance.tsv file from Kallisto in each sample
+
+In this example, PancK1-PancK4 are K700E and PancD1, PancD2, PancH1 are WildType.
+
+```{r}
+meta <- data.frame(condition = c(rep("K700E", 4), rep("WT", 3)), rep = c(1:4,1:3))
+meta$name <- c("PancK1", "PancK2", "PancK3", "PancK4", "PancD1", "PancD2", "PancH1")
+meta$file <- file.path("/Users/litingku/Desktop/Lab/Combine Project SF3b1 RBM10/DGE/Panc 0504/Gene_tsvfile", meta$name, "abundance.tsv")
+```
+
+## PCA plot 
+
+- To see if samples cluster will
+
+```{r}
+PCAdata <- tximport(meta$file, type = "kallisto",tx2gene = t2g, ignoreTxVersion=T, ignoreAfterBar = T)$counts
+colnames(PCAdata) <- meta$name
+res_pca <- prcomp(t(PCAdata))
+#fviz_eig(res_pca)
+pca <- as.data.frame(res_pca$x)
+pca$name <- meta$name
+pca$condition <- meta$condition
+
+#pdf("/Users/litingku/Desktop/Lab/Combine Project SF3b1 RBM10/DGE/Panc 0504/PCA_DGE.pdf", width = 9, height = 8)
+ggplot(pca, aes(x = PC1, y = PC2, label = name, color = condition)) + 
+  scale_color_manual(values = c("#00798C", "#D1495B", "darkgoldenrod", "#005900", "purple4")) +
+  scale_fill_manual(values = c("#00798C", "#D1495B", "darkgoldenrod", "#005900", "purple4")) +
+  ggforce::geom_mark_ellipse(aes(fill = condition, group = condition, label = condition), 
+                             alpha = 0.1, expand = unit(10, "mm"), lty = "dotted") +
+  geom_point() + theme_bw() +
+  labs(color = "Sample", fill = "Sample")
+#dev.off()
+```
+
+## Read in the data table before doing DGE analysis
+
+- We also use MA plot and QC plot to see the overall up and down differential genes and dispersion.
+
+```{r}
+kallisto <- tximport(meta$file, type = "kallisto", tx2gene = t2g, ignoreTxVersion=T, ignoreAfterBar = T)
+dds <- DESeq(DESeqDataSetFromTximport(kallisto, colData = meta, design = ~ condition))
+resultsNames(dds)
+# Change the comparison
+res <- results(dds, contrast=c('condition','K700E','WT'))
+res
+#QC plots
+#pdf("/Users/litingku/Desktop/Lab/Combine Project SF3b1 RBM10/DGE/Panc 0504/MA_DGE.pdf", width = 9, height = 8)
+plotMA(res,main = "DEGs in K700E vs. WT")
+#dev.off()
+
+#pdf("/Users/litingku/Desktop/Lab/Combine Project SF3b1 RBM10/DGE/Panc 0504/Dispersion_DGE.pdf", width = 9, height = 8)
+plotDispEsts(dds, main = "Dispersion of K700E vs WT", legend = F)
+#dev.off()
+```
+
+## DGE analysis and create the DGE table for down stream anaylses
+
+- Using DESeq2 for normalized counts and annotated by gene name, position.etc.
+
+- In this analysis, I filter out the adjusted p-value with NA, according to this expaination.
+
+http://bioconductor.org/packages/devel/bioc/vignettes/DESeq2/inst/doc/DESeq2.html#indfilt
+
+
+```{r}
+# Create DGE tables
+comp <- as.data.frame(res)
+exprsn <- as.data.frame(kallisto$abundance)
+norm_counts <- counts(dds, normalized = T)
+exprsn[,1:7] <- norm_counts
+colnames(exprsn) <- meta$name
+exprsn <- cbind(exprsn, comp)
+exprsn$baseMean <- NULL
+#find gene symbols
+attributes <- getBM(attributes = c("ensembl_gene_id", "hgnc_symbol","start_position", "end_position","chromosome_name", "band"),
+                    filters = "ensembl_gene_id", values = row.names(exprsn),
+                    mart = mart)
+attributes$cyto_band <- paste(attributes$chromosome_name, attributes$band)
+exprsn$ENSG <- row.names(exprsn)
+exprsn <- dplyr::left_join(exprsn, attributes, by = c("ENSG" = "ensembl_gene_id"))
+exprsn <- exprsn[!duplicated(exprsn),]
+# resons for filter padj http://bioconductor.org/packages/devel/bioc/vignettes/DESeq2/inst/doc/DESeq2.html#indfilt
+exprsn <- exprsn[-which(is.na(exprsn$padj)),]
+exprsn <- exprsn[-which(exprsn$hgnc_symbol == ""),]
+#write.csv(exprsn, "/Users/litingku/Desktop/Lab/Combine Project SF3b1 RBM10/DGE/Panc 0504/DESeq2_Panc.csv")
+```
+
+## Volcano Plot
+
+- In order to plot the volvano plot, here, I use the cutoff for |log2FoldChange| $\geq$ 2 and adjusted p-value < 0.05
+ 
+
+```{r}
+exprsn$colorgroup <- 0
+exprsn[which(abs(exprsn$log2FoldChange) >= 2 & exprsn$padj < 0.05),]$colorgroup <- "group1"
+exprsn[which(abs(exprsn$log2FoldChange) >= 2 & exprsn$padj >= 0.05),]$colorgroup <- "group2"
+exprsn[which(abs(exprsn$log2FoldChange) < 2 & exprsn$padj < 0.05),]$colorgroup <- "group3"
+exprsn[which(abs(exprsn$log2FoldChange) < 2 & exprsn$padj >= 0.05),]$colorgroup <- "group4"
+
+volc <- ggplot(exprsn, aes(x = log2FoldChange, y = -log10(padj), label = hgnc_symbol, color = colorgroup)) +
+  geom_point(alpha = 0.5) + 
+  geom_hline(yintercept = -log10(0.05), lty = "dashed") +
+  geom_vline(xintercept = c(-2,2), lty = "dashed") +
+  scale_color_manual(values = c("darkred","darkblue",  "darkgreen", "grey")) +
+  theme_classic() +
+  theme(legend.position = "none") +
+  xlab(expression("WT ← " ~ log[2](FC) ~" → K700E")) + ylab(expression(-log[10]("P-value"))) +
+  xlim(-10, 10) +
+  geom_text_repel(data = subset(exprsn, abs(exprsn$log2FoldChange) >= 2 & exprsn$padj <= 0.05),
+                  box.padding = 0.35,
+                  point.padding = 0.5,
+                  segment.color = 'grey50',
+                  max.overlaps = 40,
+                  size = 2) +
+  ggtitle("Volcano Plot of Panc0504 DGE K700E vs WT")
+
+#pdf("/Users/litingku/Desktop/Lab/Combine Project SF3b1 RBM10/DGE/Panc 0504/volcplot_DGE.pdf", width = 9, height = 8)
+volc
+#dev.off()
+```
