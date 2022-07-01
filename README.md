@@ -1,10 +1,10 @@
-## Welcome to GitHub Pages
+## RNA Alternative Splicing Analyses
 
-You can use the [editor on GitHub](https://github.com/LitingKu/RNA-Alterntaive-Splicing-Analyses/edit/main/README.md) to maintain and preview the content for your website in Markdown files.
+This page is the collection of how I learn and conduct analyses for bulk RNA sequence. 
 
-Whenever you commit to this repository, GitHub Pages will run [Jekyll](https://jekyllrb.com/) to rebuild the pages in your site, from the content in your Markdown files.
+The main analyses here, is to use the raw sequence for mapping, and then do the **Differential Gene Expression analysis**, **Alternative Splicing Analysis**, **Motif Enrichment Analysis** and **Chromosome Analysis**.
 
-### Markdown
+### Differential Gene Expression Analysis
 
 Markdown is a lightweight and easy-to-use syntax for styling your writing. It includes conventions for
 
