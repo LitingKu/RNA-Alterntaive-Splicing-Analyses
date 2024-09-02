@@ -2,7 +2,7 @@
 
 # RNA Alternative Splicing Analyses
 
-This page is the collection of how I learn and conduct analyses for bulk RNA sequence. 
+This page is the collection of how I learn and conduct analyses for bulk RNA sequence in Escobar Lab at Yale University
 
 Here shows the preparation for RNA sequence analyses
 
